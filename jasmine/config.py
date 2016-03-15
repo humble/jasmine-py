@@ -68,6 +68,9 @@ class Config(object):
     def random(self):
         return self._yaml.get("random") is True
 
+    def decode_files(self):
+        return self._yaml.get("decode_files", True) is True
+
     def _prefix_src_underscored(self, path):
         return (
             path if path.startswith('http') else "__src__/{0}".format(path)

@@ -34,8 +34,11 @@ class JasmineApp(object):
                 self.filetype_mapping[filetype],
                 filename
             )
-            raw_contents = open(path, 'rb').read()
-            contents = self._decode_raw(raw_contents)
+            if self.jasmine_config.decode_files():
+                raw_contents = open(path, 'rb').read()
+                contents = self._decode_raw(raw_contents)
+            else:
+                contents = open(path, 'r').read()
 
         response = make_response(contents)
         response.mimetype = mimetypes.guess_type(filename)[0]
