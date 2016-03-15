@@ -127,7 +127,8 @@ class CIRunner(object):
                 globals(), locals(), ['object'], 0
             )
 
-            self.browser = webdriver.WebDriver()
+            driver_kwargs = self._build_webdriver_kwargs(driver, webdriver)
+            self.browser = webdriver.WebDriver(**driver_kwargs)
         except ImportError as e:
             print("Browser {0} not found".format(driver))
         return test_server
@@ -188,3 +189,12 @@ class CIRunner(object):
             except WebDriverException:
                 pass
         return log
+
+    def _build_webdriver_kwargs(self, driver_name, webdriver):
+        driver_kwargs = {}
+        if driver_name == "chrome":
+            chrome_options = webdriver.Options()
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            driver_kwargs["chrome_options"] = chrome_options
+        return driver_kwargs
