@@ -237,4 +237,16 @@ stop_spec_on_expectation_failure:
 # random: true
 #
 random:
+
+# decode_files
+#
+# Flag to indicate if source files should be have their encodings checked and then decoded.  Safer but slower.
+#
+# Default: True
+#
+# EXAMPLE:
+#
+# decode_files: False
+#
+decode_files: True
 """
