@@ -196,5 +196,6 @@ class CIRunner(object):
             chrome_options = webdriver.Options()
             chrome_options.add_argument("--disable-background-timer-throttling")
             chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--incognito")
             driver_kwargs["chrome_options"] = chrome_options
         return driver_kwargs
