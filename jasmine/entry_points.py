@@ -16,13 +16,15 @@ def standalone():
                         help='The port of the Jasmine html runner')
     parser.add_argument('-o', '--host', type=str, default='127.0.0.1',
                         help='The host of the Jasmine html runner')
+    parser.add_argument('-c', '--config', type=str,
+                        help='Custom path to jasmine.yml')
     args = parser.parse_args()
 
-    if _check_for_config():
-        jasmine_config = _load_config()
+    if _check_for_config(args.config):
+        jasmine_config = _load_config(args.config)
         try:
             jasmine_app = JasmineApp(jasmine_config=jasmine_config)
-            jasmine_app.app.run(host=args.host, port=args.port, debug=True, passthrough_errors=False)
+            jasmine_app.run(host=args.host, port=args.port, blocking=True)
         except socket.error:
             sys.stdout.write('Socket unavailable')
 
@@ -35,30 +37,38 @@ def continuous_integration():
                         help='Displays browser logs')
     parser.add_argument('-s', '--seed', type=str,
                         help='Seed for random spec order')
+    parser.add_argument('-c', '--config', type=str,
+                        help='Custom path to jasmine.yml')
     args = parser.parse_args()
 
-    if _check_for_config():
-        jasmine_config = _load_config()
+    if _check_for_config(args.config):
+        jasmine_config = _load_config(args.config)
         jasmine_app = JasmineApp(jasmine_config=jasmine_config)
         CIRunner(jasmine_config=jasmine_config).run(
             browser=args.browser,
             show_logs=args.logs,
             seed=args.seed,
-            app=jasmine_app.app,
+            app=jasmine_app,
         )
 
 
-def _config_paths():
+def _config_paths(custom_config_path):
     project_path = os.path.realpath(os.path.dirname(__name__))
+    jasmine_conf = "spec/javascripts/support/jasmine.yml"
+    if 'JASMINE_CONFIG_PATH' in os.environ:
+        jasmine_conf = os.environ['JASMINE_CONFIG_PATH']
+    if custom_config_path is not None:
+        jasmine_conf = custom_config_path
+
     config_file = os.path.join(
         project_path,
-        "spec/javascripts/support/jasmine.yml"
+        jasmine_conf
     )
     return config_file, project_path
 
 
-def _check_for_config():
-    config_file, _ = _config_paths()
+def _check_for_config(custom_config_path):
+    config_file, _ = _config_paths(custom_config_path)
 
     config_exists = os.path.exists(config_file)
     if not config_exists:
@@ -66,8 +76,8 @@ def _check_for_config():
     return config_exists
 
 
-def _load_config():
-    config_file, project_path = _config_paths()
+def _load_config(custom_config_path):
+    config_file, project_path = _config_paths(custom_config_path)
     return Config(config_file, project_path=project_path)
 
 
@@ -237,16 +247,4 @@ stop_spec_on_expectation_failure:
 # random: true
 #
 random:
-
-# decode_files
-#
-# Flag to indicate if source files should be have their encodings checked and then decoded.  Safer but slower.
-#
-# Default: True
-#
-# EXAMPLE:
-#
-# decode_files: False
-#
-decode_files: True
 """

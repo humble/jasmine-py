@@ -1,8 +1,19 @@
 from setuptools import setup, find_packages
+import sys
+
+old_python = sys.version_info[0] == 2 and sys.version_info[1] < 7
+cherrypy_version = '10.2.2' if old_python else '11'
+
+
+def extra_dependencies():
+    if old_python:
+        return ['portend<2.1']
+    else:
+        return []
 
 setup(
     name="jasmine",
-    version="2.4.3",
+    version="2.8.0",
     url="http://jasmine.github.io",
     author="Pivotal Labs",
     author_email="jasmine-js@googlegroups.com",
@@ -48,5 +59,13 @@ setup(
         ]
     },
 
-    install_requires=[line for line in open('requirements.txt')],
+    install_requires=[
+        'PyYAML==3.10',
+        'argparse>=1.0, <2.0',
+        'Jinja2>=2.0, <3.0',
+        'six>=1.0, <2.0',
+        'jasmine-core>=2.8, <3.0',
+        'CherryPy>=%s' % cherrypy_version,
+        'selenium>=3.0'
+    ] + extra_dependencies(),
 )

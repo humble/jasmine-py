@@ -21,18 +21,11 @@ import jasmine.standalone
 
 class FakeApp(object):
     def __init__(self, jasmine_config=None):
-        self.app = Mock()
-        FakeApp.app = self.app
+        FakeApp.app = self
+        self.run = MagicMock(name='run')
 
-    def run(self):
+    def run(self, host=None, port=None, blocking=False):
         pass
-
-
-@pytest.fixture
-def app(request):
-    fake_app = FakeApp()
-    fake_app.run = MagicMock(name='run')
-    return fake_app
 
 
 @pytest.fixture
@@ -49,6 +42,22 @@ def mockfs_with_config(request):
         "/spec/javascripts/support/jasmine.yml": """
         src_dir: src
         spec_dir: spec
+        """
+    })
+    request.addfinalizer(lambda: restore_builtins())
+    return mfs
+
+@pytest.fixture
+def mockfs_with_config_and_custom_config(request):
+    mfs = replace_builtins()
+    mfs.add_entries({
+        "/spec/javascripts/support/jasmine.yml": """
+        src_dir: src
+        spec_dir: spec
+        """,
+        "/custom/path/to/jasmine.yml": """
+        src_dir: custom_src
+        spec_dir: custom_spec
         """
     })
     request.addfinalizer(lambda: restore_builtins())
@@ -102,50 +111,91 @@ def test_continuous_integration__set_seed(monkeypatch, mockfs_with_config, mock_
 
     CIRunner.run.assert_called_once_with(seed="1234", show_logs=False, browser=None, app=FakeApp.app)
 
+def test_continuous_integration__custom_config__from_argv(monkeypatch, mockfs_with_config_and_custom_config):
+    monkeypatch.setattr(sys, 'argv', ["test.py", "-c", "/custom/path/to/jasmine.yml"])
+    fake_standalone = Mock()
+    monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', fake_standalone)
 
-def test_standalone__set_host(monkeypatch, app, mockfs_with_config):
+    continuous_integration()
+
+    fake_standalone.assert_called_once()
+    standalone_construction_kwargs = fake_standalone.call_args[1]
+    called_with_config = standalone_construction_kwargs['jasmine_config'].yaml_file
+    assert called_with_config == "/custom/path/to/jasmine.yml"
+
+
+def test_standalone__set_host(monkeypatch, mockfs_with_config):
     monkeypatch.setattr(sys, 'argv', ["test.py", "-o", "127.0.0.2"])
     monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', FakeApp)
 
     standalone()
 
-    FakeApp.app.run.assert_called_once_with(host="127.0.0.2", port=8888, debug=True)
+    FakeApp.app.run.assert_called_once_with(host="127.0.0.2", port=8888, blocking=True)
 
 
-def test_standalone__set_port(monkeypatch, app, mockfs_with_config):
+def test_standalone__set_port(monkeypatch, mockfs_with_config):
     monkeypatch.setattr(sys, 'argv', ["test.py", "-p", "1337"])
     monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', FakeApp)
 
     standalone()
 
-    FakeApp.app.run.assert_called_once_with(host="127.0.0.1", port=1337, debug=True)
+    FakeApp.app.run.assert_called_once_with(host="127.0.0.1", port=1337, blocking=True)
 
 
-def test_standalone__port_default(monkeypatch, app, mockfs_with_config):
+def test_standalone__port_default(monkeypatch, mockfs_with_config):
     monkeypatch.setattr(sys, 'argv', ["test.py"])
     monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', FakeApp)
 
     standalone()
 
-    FakeApp.app.run.assert_called_once_with(host="127.0.0.1", port=8888, debug=True)
+    FakeApp.app.run.assert_called_once_with(host="127.0.0.1", port=8888, blocking=True)
 
 
-def test_standalone__port_invalid(monkeypatch, app, mockfs_with_config):
+def test_standalone__port_invalid(monkeypatch, mockfs_with_config):
+    FakeApp.app = None
     monkeypatch.setattr(sys, 'argv', ["test.py", "-p", "pants"])
+    monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', FakeApp)
 
     with pytest.raises(SystemExit):
         standalone()
 
     assert "invalid int value: 'pants'"
-    assert not app.run.called
+    assert FakeApp.app == None
 
-
-def test_standalone__missing_config(monkeypatch, app, mockfs):
+def test_standalone__missing_config(monkeypatch, mockfs):
+    FakeApp.app = None
     monkeypatch.setattr(sys, 'argv', ["test.py"])
+    monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', FakeApp)
 
     standalone()
 
-    assert not app.run.called
+    assert FakeApp.app == None
+
+def test_standalone__custom_config__from_argv(monkeypatch, mockfs_with_config_and_custom_config):
+    monkeypatch.setattr(sys, 'argv', ["test.py", "-c", "/custom/path/to/jasmine.yml"])
+    fake_standalone = Mock()
+    monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', fake_standalone)
+
+    standalone()
+
+    fake_standalone.assert_called_once()
+    standalone_construction_kwargs = fake_standalone.call_args[1]
+    called_with_config = standalone_construction_kwargs['jasmine_config'].yaml_file
+    assert called_with_config == "/custom/path/to/jasmine.yml"
+
+def test_standalone__custom_config__when_environment_variable_set(monkeypatch, mockfs_with_config_and_custom_config):
+    monkeypatch.setattr(sys, 'argv', ["test.py"])
+    env_vars = {'JASMINE_CONFIG_PATH': "/custom/path/to/jasmine.yml"}
+    monkeypatch.setattr(os, 'environ', env_vars)
+    fake_standalone = Mock()
+    monkeypatch.setattr(jasmine.entry_points, 'JasmineApp', fake_standalone)
+
+    standalone()
+
+    fake_standalone.assert_called_once()
+    standalone_construction_kwargs = fake_standalone.call_args[1]
+    called_with_config = standalone_construction_kwargs['jasmine_config'].yaml_file
+    assert called_with_config == "/custom/path/to/jasmine.yml"
 
 
 def test__query__yes(capsys, monkeypatch):

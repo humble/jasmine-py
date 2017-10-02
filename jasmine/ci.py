@@ -1,66 +1,33 @@
+import itertools
 import os
 import socket
 import sys
 import threading
 
-import six.moves.urllib as urllib
-from cherrypy import wsgiserver
+from six.moves import range
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.support.wait import WebDriverWait
 
 from jasmine.console_formatter import ConsoleFormatter
 from jasmine.js_api_parser import Parser
+from jasmine.url_builder import JasmineUrlBuilder
 
 
 class TestServerThread(threading.Thread):
 
-    def __init__(self, app=None, *args, **kwargs):
+    def __init__(self, port, app=None, *args, **kwargs):
         super(TestServerThread, self).__init__(*args, **kwargs)
-        self.server = None
-        self.port = None
+        self.port = port
         self.app = app
 
     def run(self):
-        ports = self.possible_ports("localhost:80,8889-9999")
-
-        for index, port in enumerate(ports):
-            try:
-                self.server = wsgiserver.CherryPyWSGIServer(
-                    ('localhost', port),
-                    self.app,
-                    request_queue_size=2048
-                )
-                self.port = port
-                self.server.start()
-                break
-            except socket.error:
-                continue
+        self.app.run('127.0.0.1', self.port, blocking=False)
 
     def join(self, timeout=None):
-        self.server.stop()
+        self.app.stop()
 
-    def possible_ports(self, specified_address):
-        possible_ports = []
-
-        try:
-            host, port_ranges = specified_address.split(':')
-            for port_range in port_ranges.split(','):
-                # A port range can be of either form: '8000' or '8000-8010'.
-                extremes = list(map(int, port_range.split('-')))
-                assert len(extremes) in [1, 2]
-                if len(extremes) == 1:
-                    # Port range of the form '8000'
-                    possible_ports.append(extremes[0])
-                else:
-                    # Port range of the form '8000-8010'
-                    for port in range(extremes[0], extremes[1] + 1):
-                        possible_ports.append(port)
-        except Exception:
-            raise 'Invalid address ("{}") for live server.'.format(
-                specified_address
-            )
-
-        return possible_ports
+    def _possible_ports(self):
+        return itertools.chain(range(80, 81, 1), range(8889, 10000))
 
 
 class CIRunner(object):
@@ -70,11 +37,11 @@ class CIRunner(object):
 
     def run(self, browser=None, show_logs=False, app=None, seed=None):
         try:
-            test_server = self._start_test_server(app, browser)
+            port = self._find_unused_port()
+            self.test_server = self._start_test_server(app, browser, port)
 
-            netloc = "localhost:{0}".format(test_server.port)
-            query_string = self._build_query_params(seed=seed)
-            jasmine_url = urllib.parse.urlunparse(('http', netloc, "", "", query_string, ""))
+            url_builder = JasmineUrlBuilder(jasmine_config=self.jasmine_config)
+            jasmine_url = url_builder.build_url(port, seed)
             self.browser.get(jasmine_url)
 
             WebDriverWait(self.browser, 100).until(
@@ -84,7 +51,8 @@ class CIRunner(object):
 
             parser = Parser()
             spec_results = self._get_spec_results(parser)
-            suite_results = self._get_suite_results(parser)
+            top_suite_results = self._get_top_suite_results(parser)
+            suite_results = self._get_suite_results(parser) + top_suite_results
             show_logs = self._get_browser_logs(show_logs=show_logs)
             actual_seed = self._get_seed()
 
@@ -94,9 +62,13 @@ class CIRunner(object):
                 browser_logs=show_logs,
                 seed=actual_seed
             )
-            sys.stdout.write(formatter.format())
-            if (len(list(formatter.results.failed())) or
-                    len(list(formatter.suite_results.failed()))):
+            str_output = formatter.format()
+            if sys.version_info[0] < 3:
+                sys.stdout.write(str_output.encode('UTF8'))
+            else:
+                sys.stdout.write(str_output)
+
+            if len(spec_results.failed()) or len(suite_results.failed()):
                 sys.exit(1)
         finally:
             if hasattr(self, 'browser'):
@@ -104,20 +76,15 @@ class CIRunner(object):
             if hasattr(self, 'test_server'):
                 self.test_server.join()
 
-    def _build_query_params(self, seed):
-        query_params = {
-            "throwFailures": self.jasmine_config.stop_spec_on_expectation_failure(),
-            "random": self.jasmine_config.random(),
-            "seed": seed
-        }
-        query_params = self._remove_empty_params(query_params)
-        return urllib.parse.urlencode(query_params)
+    def _find_unused_port(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('0.0.0.0', 0))
+        addr, port = s.getsockname()
+        s.close()
+        return port
 
-    def _remove_empty_params(self, query_params):
-        return dict(((k, v) for k, v in query_params.items() if v))
-
-    def _start_test_server(self, app, browser):
-        test_server = TestServerThread(app=app)
+    def _start_test_server(self, app, browser, port):
+        test_server = TestServerThread(port, app=app)
         test_server.start()
         driver = browser if browser \
             else os.environ.get('JASMINE_BROWSER', 'firefox')
@@ -171,6 +138,16 @@ class CIRunner(object):
                 break
 
         return parser.parse(suite_results)
+
+    def _get_top_suite_results(self, parser):
+        failed_expectations = self.browser.execute_script("return jsApiReporter.runDetails").get('failedExpectations')
+
+        top_suite_result = {
+            "failedExpectations": failed_expectations,
+            "status": "failed" if len(failed_expectations) else "passed"
+        }
+
+        return parser.parse([top_suite_result])
 
     def _get_seed(self):
         order = self._get_order()

@@ -1,18 +1,12 @@
 import datetime
-import time
 import sys
-import six.moves.urllib as urllib
+import time
 
-from mock import MagicMock
 import pytest
+from mock import MagicMock
 
-from jasmine.ci import CIRunner, TestServerThread
+from jasmine.ci import CIRunner
 from test.helpers.fake_config import FakeConfig
-
-
-def test_possible_ports():
-    ports = TestServerThread().possible_ports("localhost:80,8000-8002")
-    assert ports == [80, 8000, 8001, 8002]
 
 
 @pytest.fixture
@@ -25,16 +19,19 @@ def sysexit(monkeypatch):
 @pytest.fixture
 def test_server(monkeypatch):
     import jasmine.ci
-
-    server = MagicMock()
-    setattr(server, 'port', 80)
+    instance = [None]
 
     class FakeTestServerThread(object):
-        def __new__(cls, *args, **kwargs):
-            return server
+        def __init__(self, port, app=None, *args, **kwargs):
+            self.port = port
+            instance[0] = self
+        def start(arg):
+            pass
+        def join(self):
+            pass
 
     monkeypatch.setattr(jasmine.ci, 'TestServerThread', FakeTestServerThread)
-    return server
+    return lambda: instance[0]
 
 
 @pytest.fixture
@@ -127,6 +124,7 @@ def suite_results():
 @pytest.fixture
 def run_details():
     return {
+        "failedExpectations": [],
         "order": {
             "random": False,
             "seed": 54321
@@ -135,8 +133,36 @@ def run_details():
 
 
 @pytest.fixture
+def run_details_with_failures():
+    return {
+        "failedExpectations": [
+            {
+                "matcherName": "toEqual",
+                "message": "Expected 'foo' to equal 'bar'.",
+                "stack": "stack trace",
+                "passed": False,
+                "expected": "foo",
+                "actual": "bar"
+            },
+            {
+                "matcherName": "toEqual",
+                "message": "Expected 'baz' to equal 'quux'.",
+                "stack": "stack trace 2",
+                "passed": False,
+                "expected": "baz",
+                "actual": "quux"
+            }
+        ],
+        "order": {
+            "random": False,
+            "seed": 54321
+        }
+    }
+
+@pytest.fixture
 def run_details_random():
     return {
+        "failedExpectations": [],
         "order": {
             "random": True,
             "seed": 12345
@@ -151,37 +177,14 @@ def jasmine_config():
         spec_dir='spec',
     )
 
-
-def test_run_passes_no_query_params_by_default(jasmine_config, firefox_driver, test_server):
-    CIRunner(jasmine_config=jasmine_config).run(show_logs=True)
-
-    firefox_driver.get.assert_called_with('http://localhost:80')
+def test_run_builds_url(suites, results, run_details, capsys, sysexit, firefox_driver, test_server, jasmine_config):
+    CIRunner(jasmine_config=jasmine_config).run()
+    firefox_driver.get.assert_called_with('http://localhost:%s' % test_server().port)
 
 
-def test_run_passes_stop_spec_on_expectation_failure_to_browser(jasmine_config, firefox_driver, test_server):
-    jasmine_config._stop_spec_on_expectation_failure = True
-    CIRunner(jasmine_config=jasmine_config).run(show_logs=True)
-
-    firefox_driver.get.assert_called_with('http://localhost:80?throwFailures=True')
-
-
-def test_run_passes_random_to_browser(jasmine_config, firefox_driver, test_server):
-    jasmine_config._random = True
-    CIRunner(jasmine_config=jasmine_config).run(show_logs=True)
-
-    firefox_driver.get.assert_called_with('http://localhost:80?random=True')
-
-
-def test_run_can_handle_multiple_query_params(jasmine_config, firefox_driver, test_server):
-    jasmine_config._random = True
-    jasmine_config._stop_spec_on_expectation_failure = True
-    CIRunner(jasmine_config=jasmine_config).run(show_logs=True, seed="1234")
-
-    called_url = firefox_driver.get.call_args[0][0]
-    uri_tuple = urllib.parse.urlparse(called_url)
-    assert uri_tuple[0] == 'http'
-    assert uri_tuple[1] == 'localhost:80'
-    assert urllib.parse.parse_qs(uri_tuple[4]) == {"random": ['True'], "throwFailures": ['True'], "seed": ['1234']}
+def test_run_with_random_seed(suites, results, run_details, capsys, sysexit, firefox_driver, test_server, jasmine_config):
+    CIRunner(jasmine_config=jasmine_config).run(seed="1234")
+    firefox_driver.get.assert_called_with('http://localhost:%s?seed=1234' % test_server().port)
 
 
 def test_run_exits_with_zero_on_success(suites, results, run_details, capsys, sysexit, firefox_driver, test_server, jasmine_config):
@@ -284,12 +287,6 @@ def test_run_with_browser_logs(suites, results, run_details, capsys, sysexit, fi
     assert '[{0} - WARNING] world\n'.format(dt) in stdout
 
 
-def test_run_with_random_seed(suites, results, run_details, capsys, sysexit, firefox_driver, test_server, jasmine_config):
-    CIRunner(jasmine_config=jasmine_config).run(seed="1234")
-
-    firefox_driver.get.assert_called_with('http://localhost:80?seed=1234')
-
-
 def test_displays_afterall_errors(suite_results, suites, results, run_details, capsys, sysexit, firefox_driver, test_server, jasmine_config):
     results[0] = results[1]
     del results[1]
@@ -311,6 +308,34 @@ def test_displays_afterall_errors(suite_results, suites, results, run_details, c
     stdout, _ = capsys.readouterr()
 
     assert 'something went wrong' in stdout
+    sysexit.assert_called_with(1)
+
+
+def test_displays_top_suite_errors(suite_results, suites, results, run_details_with_failures, capsys, sysexit, firefox_driver, test_server, jasmine_config):
+    results[0] = results[1]
+    del results[1]
+
+    def execute_script(js):
+        if 'jsApiReporter.finished' in js:
+            return True
+        if 'jsApiReporter.specResults' in js:
+            return results
+        if 'jsApiReporter.suiteResults' in js:
+            return suite_results
+        if 'jsApiReporter.runDetails' in js:
+            return run_details_with_failures
+        return None
+
+    firefox_driver.execute_script = execute_script
+
+    CIRunner(jasmine_config=jasmine_config).run()
+    stdout, _ = capsys.readouterr()
+
+    assert "Expected 'foo' to equal 'bar'." in stdout
+    assert "stack trace" in stdout
+    assert "Expected 'baz' to equal 'quux'." in stdout
+    assert "stack trace 2" in stdout
+
     sysexit.assert_called_with(1)
 
 
