@@ -86,15 +86,14 @@ class CIRunner(object):
     def _start_test_server(self, app, browser, port):
         test_server = TestServerThread(port, app=app)
         test_server.start()
-        driver = browser if browser \
-            else os.environ.get('JASMINE_BROWSER', 'firefox')
+        driver = self._get_driver(browser)
         try:
             webdriver = __import__(
                 "selenium.webdriver.{0}.webdriver".format(driver),
                 globals(), locals(), ['object'], 0
             )
 
-            driver_kwargs = self._build_webdriver_kwargs(driver, webdriver)
+            driver_kwargs = self._build_webdriver_kwargs(browser, webdriver)
             self.browser = webdriver.WebDriver(**driver_kwargs)
         except ImportError as e:
             print("Browser {0} not found".format(driver))
@@ -167,12 +166,24 @@ class CIRunner(object):
                 pass
         return log
 
-    def _build_webdriver_kwargs(self, driver_name, webdriver):
+    def _get_driver(self, browser):
+        if browser == "chrome-headless":
+            return "chrome"
+        elif browser:
+            return browser
+        else:
+            return os.environ.get('JASMINE_BROWSER', 'firefox')
+
+    def _build_webdriver_kwargs(self, browser, webdriver):
         driver_kwargs = {}
+        driver_name = self._get_driver(browser)
         if driver_name == "chrome":
             chrome_options = webdriver.Options()
             chrome_options.add_argument("--disable-background-timer-throttling")
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--incognito")
+            if browser == "chrome-headless":
+                chrome_options.add_argument("--headless")
+                chrome_options.add_argument("--disable-gpu")
             driver_kwargs["chrome_options"] = chrome_options
         return driver_kwargs
