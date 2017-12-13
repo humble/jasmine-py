@@ -20,6 +20,9 @@ class JasmineApp(object):
             'js_files': self.jasmine_config.script_urls()
         }
 
+        # CUSTOM HB CHANGE - do not let the browser cache any specs
+        cherrypy.response.headers['Cache-Control'] = 'no-store'
+
         template = self.jinja_env.from_string(pkg_resources.resource_string(
             'jasmine.templates',
             'runner.html'
@@ -78,6 +81,9 @@ class JasmineFile(object):
                 ),
                 content_type='image/png'
             )
+
+        # CUSTOM HB CHANGE - do not let the browser cache any specs
+        cherrypy.response.headers['Cache-Control'] = 'no-store'
 
         mime_type, _ = mimetypes.guess_type(path)
         return cherrypy.lib.static.serve_fileobj(

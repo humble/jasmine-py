@@ -13,7 +13,7 @@ def extra_dependencies():
 
 setup(
     name="jasmine",
-    version="2.8.0.1",
+    version="2.8.0.2",
     url="http://jasmine.github.io",
     author="Pivotal Labs",
     author_email="jasmine-js@googlegroups.com",
