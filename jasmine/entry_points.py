@@ -247,4 +247,15 @@ stop_spec_on_expectation_failure:
 # random: true
 #
 random:
+
+# suite_timeout
+#
+# Number of seconds to wait for the suite to finish.
+# Default: 100
+#
+# EXAMPLE:
+#
+# suite_timeout: 120
+#
+suite_timeout:
 """

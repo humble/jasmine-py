@@ -44,7 +44,7 @@ class CIRunner(object):
             jasmine_url = url_builder.build_url(port, seed)
             self.browser.get(jasmine_url)
 
-            WebDriverWait(self.browser, 100).until(
+            WebDriverWait(self.browser, self.jasmine_config.suite_timeout()).until(
                 lambda driver:
                 driver.execute_script("return jsApiReporter.finished;")
             )
