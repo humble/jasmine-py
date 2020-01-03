@@ -187,5 +187,9 @@ class CIRunner(object):
                 # currently avoids some bugs in headless mode, but should fixed eventually
                 # https://developers.google.com/web/updates/2017/04/headless-chrome
                 chrome_options.add_argument("--disable-gpu")
+                if self.jasmine_config.remote_debugging_port():
+                    chrome_options.add_argument(
+                        "--remote-debugging-port=%s" % self.jasmine_config.remote_debugging_port()
+                    )
             driver_kwargs["chrome_options"] = chrome_options
         return driver_kwargs

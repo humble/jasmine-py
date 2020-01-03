@@ -71,6 +71,9 @@ class Config(object):
     def suite_timeout(self):
         return self._yaml.get("suite_timeout") or 100
 
+    def remote_debugging_port(self):
+        return self._yaml.get('remote_debugging_port')
+
     def _prefix_src_underscored(self, path):
         return (
             path if path.startswith('http') else "/__src__/{0}".format(path)
