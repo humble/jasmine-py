@@ -258,4 +258,14 @@ random:
 # suite_timeout: 120
 #
 suite_timeout:
+
+# remote_debugging_port
+#
+# Port to use for headless browser debugging
+#
+# EXAMPLE:
+#
+# remote_debugging_port: 9222
+#
+remote_debugging_port:
 """
